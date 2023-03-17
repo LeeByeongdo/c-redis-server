@@ -28,7 +28,7 @@ static int32_t read_full(int fd, char *buf, size_t n) {
         }
 
         assert((size_t) rv <= n);
-        n -= (size_t)rv;
+        n -= (size_t) rv;
         buf += rv;
     }
     return 0;
@@ -42,7 +42,7 @@ static int32_t write_all(int fd, const char *buf, size_t n) {
         }
 
         assert((size_t) rv <= n);
-        n -= (size_t)rv;
+        n -= (size_t) rv;
         buf += rv;
     }
     return 0;
@@ -83,7 +83,7 @@ static int32_t one_request(int connfd) {
     // reply
     const char reply[] = "world";
     char wbuf[4 + sizeof(reply)];
-    len = (uint32_t)strlen(reply);
+    len = (uint32_t) strlen(reply);
     memcpy(wbuf, &len, 4);
     memcpy(&wbuf[4], reply, len);
     return write_all(connfd, wbuf, 4 + len);
@@ -128,7 +128,7 @@ static void fd_set_nb(int fd) {
     flags |= O_NONBLOCK;
 
     errno = 0;
-    (void)fcntl(fd, F_SETFL, flags);
+    (void) fcntl(fd, F_SETFL, flags);
     if (errno) {
         die("fcntl error");
     }
@@ -175,12 +175,16 @@ static bool try_fill_buffer(Conn *conn) {
         return false;
     }
 
-    conn->rbuf_size += (size_t)rv;
+    conn->rbuf_size += (size_t) rv;
     // 여기 왜 이렇게 되어있는걸까?? 컨텐츠 최대 길이가 4096인데, 이렇게 하면 이거의 반까지밖에 안되는데...
     assert(conn->rbuf_size <= sizeof(conn->rbuf) - conn->rbuf_size);
 
     while (try_one_request(conn)) {}
     return (conn->state == STATE_REQ);
+}
+
+static int32_t do_request(const uint8_t *req, uint32_t reqlen, uint32_t *rescode, uint8_t *res, uint32_t *reslen) {
+    
 }
 
 static bool try_one_request(Conn *conn) {
@@ -192,7 +196,7 @@ static bool try_one_request(Conn *conn) {
     memcpy(&len, &conn->rbuf[0], 4);
     if (len > k_max_msg) {
         msg("too long");
-        conn->state =STATE_END;
+        conn->state = STATE_END;
         return false;
     }
 
@@ -201,11 +205,21 @@ static bool try_one_request(Conn *conn) {
         return false;
     }
 
-    printf("client says: %.*s\n", len, &conn->rbuf[4]);
+    uint32_t rescode = 0;
+    uint32_t wlen = 0;
+    int32_t err = do_request(
+            &conn->rbuf[4], len, &rescode, &conn->wbuf[4 + 4], &wlen
+    );
 
-    memcpy(&conn->wbuf[0], &len, 4);
-    memcpy(&conn->wbuf[4], &conn->rbuf[4], len);
-    conn->wbuf_size = 4 + len;
+    if (err) {
+        conn->state = STATE_END;
+        return false;
+    }
+
+    wlen += 4;
+    memcpy(&conn->wbuf[0], &wlen, 4);
+    memcpy(&conn->wbuf[4], &rescode, 4);
+    conn->wbuf_size = 4 + wlen;
 
     size_t remain = conn->rbuf_size - 4 - len;
     if (remain) {
@@ -219,7 +233,7 @@ static bool try_one_request(Conn *conn) {
 }
 
 static void state_res(Conn *conn) {
-    while(try_flush_buffer(conn)) {}
+    while (try_flush_buffer(conn)) {}
 }
 
 static bool try_flush_buffer(Conn *conn) {
@@ -227,7 +241,7 @@ static bool try_flush_buffer(Conn *conn) {
     do {
         size_t remain = conn->wbuf_size - conn->wbuf_sent;
         rv = write(conn->fd, &conn->wbuf[conn->wbuf_sent], remain);
-    } while(rv <0 && errno == EINTR);
+    } while (rv < 0 && errno == EINTR);
 
     if (rv < 0 && errno == EAGAIN) {
         return false;
@@ -252,7 +266,7 @@ static bool try_flush_buffer(Conn *conn) {
 }
 
 static void conn_put(std::vector<Conn *> &fd2conn, struct Conn *conn) {
-    if (fd2conn.size() <= (size_t)conn->fd) {
+    if (fd2conn.size() <= (size_t) conn->fd) {
         fd2conn.resize(conn->fd + 1);
     }
     fd2conn[conn->fd] = conn;
@@ -261,7 +275,7 @@ static void conn_put(std::vector<Conn *> &fd2conn, struct Conn *conn) {
 static int32_t accept_new_conn(std::vector<Conn *> &fd2conn, int fd) {
     struct sockaddr_in client_addr = {};
     socklen_t socklen = sizeof(client_addr);
-    int connfd = accept(fd, (struct sockaddr *)&client_addr, &socklen);
+    int connfd = accept(fd, (struct sockaddr *) &client_addr, &socklen);
     if (connfd < 0) {
         msg("accept() error");
         return -1;
@@ -269,7 +283,7 @@ static int32_t accept_new_conn(std::vector<Conn *> &fd2conn, int fd) {
 
     fd_set_nb(connfd);
 
-    struct Conn *conn = (struct Conn *)malloc(sizeof(struct Conn));
+    struct Conn *conn = (struct Conn *) malloc(sizeof(struct Conn));
     if (!conn) {
         close(connfd);
         return -1;
@@ -285,7 +299,6 @@ static int32_t accept_new_conn(std::vector<Conn *> &fd2conn, int fd) {
 }
 
 
-
 int main() {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     int val = 1;
@@ -295,7 +308,7 @@ int main() {
     addr.sin_family = AF_INET;
     addr.sin_port = ntohs(8080);
     addr.sin_addr.s_addr = ntohl(0);
-    int rv = bind(fd, (const sockaddr *)&addr, sizeof(addr));
+    int rv = bind(fd, (const sockaddr *) &addr, sizeof(addr));
     if (rv) {
         die("bind()");
     }
@@ -327,7 +340,7 @@ int main() {
             poll_args.push_back(pfd);
         }
 
-        int rv = poll(poll_args.data(), (nfds_t)poll_args.size(), 1000);
+        int rv = poll(poll_args.data(), (nfds_t) poll_args.size(), 1000);
         if (rv < 0) {
             die("poll");
         }
@@ -339,14 +352,14 @@ int main() {
 
                 if (conn->state == STATE_END) {
                     fd2conn[conn->fd] = NULL;
-                    (void)close(conn->fd);
+                    (void) close(conn->fd);
                     free(conn);
                 }
             }
         }
 
         if (poll_args[0].revents) {
-            (void)accept_new_conn(fd2conn, fd);
+            (void) accept_new_conn(fd2conn, fd);
         }
 
     }

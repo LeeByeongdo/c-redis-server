@@ -11,6 +11,7 @@
 #include <sys/fcntl.h>
 #include <sys/poll.h>
 #include <map>
+#include "hashtable.h"
 
 static void msg(const char *msg) {
     fprintf(stderr, "%s\n", msg);
@@ -162,15 +163,30 @@ enum {
 
 static std::map<std::string, std::string> g_map;
 
+struct Entry {
+    struct HNode node;
+    std::string key;
+    std::string val;
+};
+
+static struct {
+    HMap db;
+} g_data;
+
 static uint32_t do_get(const std::vector<std::string> &cmd, uint8_t *res, uint32_t *reslen) {
-    if (!g_map.count(cmd[1])) {
+    Entry key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = str_hash((uint8_t *)key.key.data(), key.key.size());
+
+    HNode *node = hm_lookup(&g_data.db, &key.node, &entry_eq);
+    if (!node) {
         return RES_NX;
     }
 
-    std::string &val = g_map[cmd[1]];
+    const std::string &val = container_of(node, Entry, node)->val;
     assert(val.size() <= k_max_msg);
     memcpy(res, val.data(), val.size());
-    *reslen = (uint32_t) val.size();
+    *reslen = (uint32_t)val.size();
     return RES_OK;
 }
 
@@ -325,7 +341,6 @@ static int32_t accept_new_conn(std::vector<Conn *> &fd2conn, int fd) {
     conn_put(fd2conn, conn);
     return 0;
 }
-
 
 int main() {
     int fd = socket(AF_INET, SOCK_STREAM, 0);

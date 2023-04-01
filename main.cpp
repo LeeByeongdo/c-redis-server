@@ -1,17 +1,25 @@
-#include <sys/socket.h>
-#include <cstdio>
+#include <assert.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
 #include <unistd.h>
-#include <cerrno>
-#include <cstdlib>
-#include <cstring>
-#include <netinet/in.h>
-#include <cassert>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/ip.h>
 #include <string>
 #include <vector>
-#include <sys/fcntl.h>
-#include <sys/poll.h>
-#include <map>
+// proj
 #include "hashtable.h"
+
+
+#define container_of(ptr, type, member) ({                  \
+    const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
+    (type *)( (char *)__mptr - offsetof(type, member) );})
+
 
 static void msg(const char *msg) {
     fprintf(stderr, "%s\n", msg);
@@ -161,8 +169,6 @@ enum {
     RES_NX = 2,
 };
 
-static std::map<std::string, std::string> g_map;
-
 struct Entry {
     struct HNode node;
     std::string key;
@@ -173,7 +179,24 @@ static struct {
     HMap db;
 } g_data;
 
-static uint32_t do_get(const std::vector<std::string> &cmd, uint8_t *res, uint32_t *reslen) {
+
+static bool entry_eq(HNode *lhs, HNode *rhs) {
+    struct Entry *le = container_of(lhs, struct Entry, node);
+    struct Entry *re = container_of(rhs, struct Entry, node);
+    return lhs->hcode == rhs->hcode && le->key == re->key;
+}
+
+static uint64_t str_hash(const uint8_t *data, size_t len) {
+    uint32_t h = 0x811C9DC5;
+    for (size_t i = 0; i < len; i++) {
+        h = (h + data[i]) * 0x01000193;
+    }
+
+    return h;
+}
+
+
+static uint32_t do_get(std::vector<std::string> &cmd, uint8_t *res, uint32_t *reslen) {
     Entry key;
     key.key.swap(cmd[1]);
     key.node.hcode = str_hash((uint8_t *)key.key.data(), key.key.size());
@@ -190,17 +213,42 @@ static uint32_t do_get(const std::vector<std::string> &cmd, uint8_t *res, uint32
     return RES_OK;
 }
 
-static uint32_t do_set(const std::vector<std::string> &cmd, uint8_t *res, uint32_t *reslen) {
+
+static uint32_t do_set(std::vector<std::string> &cmd, uint8_t *res, uint32_t *reslen) {
     (void) res;
     (void) reslen;
-    g_map[cmd[1]] = cmd[2];
+
+    Entry key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = str_hash((uint8_t *)key.key.data(), key.key.size());
+
+    HNode *node = hm_lookup(&g_data.db, &key.node, &entry_eq);
+    if (node) {
+        container_of(node, Entry, node)->val.swap(cmd[2]);
+    } else {
+        Entry *ent = new Entry();
+        ent->key.swap(key.key);
+        ent->node.hcode = key.node.hcode;
+        ent->val.swap(cmd[2]);
+        hm_insert(&g_data.db, &ent->node);
+    }
+
     return RES_OK;
 }
 
-static uint32_t do_del(const std::vector<std::string> &cmd, uint8_t *res, uint32_t *reslen) {
+static uint32_t do_del(std::vector<std::string> &cmd, uint8_t *res, uint32_t *reslen) {
     (void) res;
     (void) reslen;
-    g_map.erase(cmd[1]);
+
+    Entry key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = str_hash((uint8_t *)key.key.data(), key.key.size());
+
+    HNode *node = hm_pop(&g_data.db, &key.node, &entry_eq);
+    if (node) {
+        delete container_of(node, Entry, node);
+    }
+
     return RES_OK;
 }
 

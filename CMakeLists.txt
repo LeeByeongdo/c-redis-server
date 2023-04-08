@@ -3,4 +3,5 @@ project(redis)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(redis main.cpp hashtable.cpp hashtable.h)
+#add_executable(redis main.cpp hashtable.cpp hashtable.h avl.cpp test_avl.cpp)
+add_executable(redis avl.cpp test_avl.cpp)

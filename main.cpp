@@ -14,23 +14,14 @@
 #include <vector>
 // proj
 #include "hashtable.h"
-
-
-#define container_of(ptr, type, member) ({                  \
-    const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
-    (type *)( (char *)__mptr - offsetof(type, member) );})
-
-enum {
-    SER_NIL = 0,
-    SER_ERR = 1,
-    SER_STR = 2,
-    SER_INT = 3,
-    SER_ARR = 4
-};
+#include "common.h"
+#include "zset.h"
 
 enum {
     ERR_UNKNOWN = 1,
     ERR_2BIG = 2,
+    ERR_TYPE = 3,
+    ERR_ARG = 4,
 };
 
 static void msg(const char *msg) {
@@ -181,10 +172,17 @@ enum {
     RES_NX = 2,
 };
 
+enum {
+    T_STR = 0,
+    T_ZSET = 1,
+};
+
 struct Entry {
     struct HNode node;
     std::string key;
     std::string val;
+    uint32_t type = 0;
+    ZSet *zset = NULL;
 };
 
 static struct {
@@ -196,15 +194,6 @@ static bool entry_eq(HNode *lhs, HNode *rhs) {
     struct Entry *le = container_of(lhs, struct Entry, node);
     struct Entry *re = container_of(rhs, struct Entry, node);
     return lhs->hcode == rhs->hcode && le->key == re->key;
-}
-
-static uint64_t str_hash(const uint8_t *data, size_t len) {
-    uint32_t h = 0x811C9DC5;
-    for (size_t i = 0; i < len; i++) {
-        h = (h + data[i]) * 0x01000193;
-    }
-
-    return h;
 }
 
 static void out_nil(std::string &out) {
@@ -314,6 +303,43 @@ static bool cmd_is(const std::string &word, const char *cmd) {
     return 0 == strcasecmp(word.c_str(), cmd);
 }
 
+static bool str2dbl(const std::string &s, double &out) {
+    char *endp = NULL;
+    out = strtod(s.c_str(), &endp);
+    return endp == s.c_str() + s.size() && !isnan(out);
+}
+
+static void do_zadd(std::vector<std::string> &cmd, std::string &out) {
+    double score = 0;
+    if (!str2dbl(cmd[2], score)) {
+        return out_err(out, ERR_ARG, "expect fp number")
+    }
+
+    Entry key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = str_hash((uint8_t *)key.key.data(), key.key.size());
+    HNode *hnode = hm_lookup(&g_data.db, &key.node, &entry_eq);
+
+    Entry *ent = NULL;
+    if (!hnode) {
+        ent = new Entry();
+        ent->key.swap(key.key);
+        ent->node.hcode = key.node.hcode;
+        ent->type = T_ZSET;
+        ent->zset = new ZSet();
+        hm_insert(&g_data.db, &ent->node);
+    } else {
+        ent = container_of(hnode, Entry, node);
+        if (ent->type != T_ZSET) {
+            return out_err(out, ERR_TYPE, "expect zset");
+        }
+    }
+
+    const std::string &name = cmd[3];
+    bool added = zset_add(ent->zset, name.data(), name.size(), score);
+    return out_int(out, (int64_t)added);
+}
+
 static void do_request(std::vector<std::string> &cmd, std::string &out) {
     if (cmd.size() == 1 && cmd_is(cmd[0], "keys")) {
         do_keys(cmd, out);
@@ -323,6 +349,14 @@ static void do_request(std::vector<std::string> &cmd, std::string &out) {
         do_set(cmd, out);
     } else if (cmd.size() == 2 && cmd_is(cmd[0], "del")) {
         do_del(cmd, out);
+    } else if (cmd.size() == 4 && cmd_is(cmd[0], "zadd")) {
+        do_zadd(cmd, out);
+    } else if (cmd.size() == 3 && cmd_is(cmd[0], "zrem")) {
+//        do_zrem(cmd, out);
+    } else if (cmd.size() == 3 && cmd_is(cmd[0], "zscore")) {
+//        do_zscore(cmd, out);
+    } else if (cmd.size() == 6 && cmd_is(cmd[0], "zquery")) {
+//        do_zquery(cmd, out);
     } else {
         out_err(out, ERR_UNKNOWN, "Unknown cmd");
     }

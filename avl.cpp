@@ -105,10 +105,6 @@ static AVLNode *avl_fix(AVLNode *node) {
     }
 }
 
-static AVLNode *avl_ins(AVLNode *node) {
-
-}
-
 static AVLNode *avl_del(AVLNode *node) {
     if (node->right == NULL) {
         AVLNode *parent = node->parent;
@@ -146,5 +142,31 @@ static AVLNode *avl_del(AVLNode *node) {
             }
         }
     }
+}
+
+AVLNode *avl_offset(AVLNode *node, int64_t offset) {
+    int64_t pos = 0;
+    while (offset != pos) {
+        if (pos < offset && pos + avl_cnt(node->right) >= offset) {
+            node = node->right;
+            pos += avl_cnt(node->left) + 1;
+        } else if (pos > offset && pos - avl_cnt(node->left) <= offset) {
+            node = node->left;
+            pos -= avl_cnt(node->right) + 1;
+        } else {
+            AVLNode *parent = node->parent;
+            if (!parent) {
+                return NULL;
+            }
+
+            if (parent->right == node) {
+                pos -= avl_cnt(node->left) + 1;
+            } else {
+                pos += avl_cnt(node->right) + 1;
+            }
+            node = parent;
+        }
+    }
+    return node;
 }
 

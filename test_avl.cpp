@@ -1,10 +1,13 @@
-#include <cassert>
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <set>
-#include "avl.cpp"
+#include "avl.cpp"  // lazy
 
 #define container_of(ptr, type, member) ({                  \
     const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
     (type *)( (char *)__mptr - offsetof(type, member) );})
+
 
 struct Data {
     AVLNode node;
@@ -30,7 +33,6 @@ static void add(Container &c, uint32_t val) {
         AVLNode **from =
                 (val < container_of(cur, Data, node)->val)
                 ? &cur->left : &cur->right;
-
         if (!*from) {
             *from = &data->node;
             data->node.parent = cur;
@@ -50,7 +52,6 @@ static bool del(Container &c, uint32_t val) {
         }
         cur = val < node_val ? cur->left : cur->right;
     }
-
     if (!cur) {
         return false;
     }
@@ -85,21 +86,20 @@ static void avl_verify(AVLNode *parent, AVLNode *node) {
         assert(node->right->parent == node);
         assert(container_of(node->right, Data, node)->val >= val);
     }
-
 }
 
 static void extract(AVLNode *node, std::multiset<uint32_t> &extracted) {
     if (!node) {
         return;
     }
-
     extract(node->left, extracted);
     extracted.insert(container_of(node, Data, node)->val);
     extract(node->right, extracted);
 }
 
 static void container_verify(
-        Container &c, const std::multiset<uint32_t> &ref) {
+        Container &c, const std::multiset<uint32_t> &ref)
+{
     avl_verify(NULL, c.root);
     assert(avl_cnt(c.root) == ref.size());
     std::multiset<uint32_t> extracted;
@@ -116,7 +116,6 @@ static void dispose(Container &c) {
 }
 
 static void test_insert(uint32_t sz) {
-    printf("hello world");
     for (uint32_t val = 0; val < sz; ++val) {
         Container c;
         std::multiset<uint32_t> ref;
@@ -124,6 +123,23 @@ static void test_insert(uint32_t sz) {
             if (i == val) {
                 continue;
             }
+            add(c, i);
+            ref.insert(i);
+        }
+        container_verify(c, ref);
+
+        add(c, val);
+        ref.insert(val);
+        container_verify(c, ref);
+        dispose(c);
+    }
+}
+
+static void test_insert_dup(uint32_t sz) {
+    for (uint32_t val = 0; val < sz; ++val) {
+        Container c;
+        std::multiset<uint32_t> ref;
+        for (uint32_t i = 0; i < sz; ++i) {
             add(c, i);
             ref.insert(i);
         }
@@ -145,6 +161,7 @@ static void test_remove(uint32_t sz) {
             ref.insert(i);
         }
         container_verify(c, ref);
+
         assert(del(c, val));
         ref.erase(val);
         container_verify(c, ref);
@@ -155,6 +172,7 @@ static void test_remove(uint32_t sz) {
 int main() {
     Container c;
 
+    // some quick tests
     container_verify(c, {});
     add(c, 123);
     container_verify(c, {123});
@@ -162,20 +180,23 @@ int main() {
     assert(del(c, 123));
     container_verify(c, {});
 
+    // sequential insertion
     std::multiset<uint32_t> ref;
-    for (uint32_t i = 0; i < 1000; i+= 3) {
+    for (uint32_t i = 0; i < 1000; i += 3) {
         add(c, i);
         ref.insert(i);
         container_verify(c, ref);
     }
 
-    for (uint32_t i = 0; i< 100; i++) {
-        uint32_t val = (uint32_t) rand() % 1000;
+    // random insertion
+    for (uint32_t i = 0; i < 100; i++) {
+        uint32_t val = (uint32_t)rand() % 1000;
         add(c, val);
         ref.insert(val);
         container_verify(c, ref);
     }
 
+    // random deletion
     for (uint32_t i = 0; i < 200; i++) {
         uint32_t val = (uint32_t)rand() % 1000;
         auto it = ref.find(val);
@@ -188,12 +209,13 @@ int main() {
         container_verify(c, ref);
     }
 
+    // insertion/deletion at various positions
     for (uint32_t i = 0; i < 200; ++i) {
         test_insert(i);
+        test_insert_dup(i);
         test_remove(i);
     }
 
     dispose(c);
-
     return 0;
 }

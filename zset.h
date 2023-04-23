@@ -1,5 +1,8 @@
+#pragma once
+
 #include "avl.h"
 #include "hashtable.h"
+
 
 struct ZSet {
     AVLNode *tree = NULL;
